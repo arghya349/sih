@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Photo to 3D — v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); overflow:hidden; }
+  .app { display:grid; grid-template-columns:380px 1fr; height:100vh; height:100dvh; }
+  .app > * { min-height:0; }
+  .panel { padding:22px 22px 70px; overflow-y:auto; overscroll-behavior:contain;
+    scrollbar-width:thin; }
+  .tagline { margin-bottom:22px; }
+
+  .step { margin-bottom:26px; }
+  .step-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .step-num { width:22px; height:22px; border-radius:50%; flex:none; display:flex;
+    align-items:center; justify-content:center; }
+  .step-count { margin-left:auto; font-size:11px; color:var(--muted);
+    font-variant-numeric:tabular-nums; }
+  .step-body { margin-left:32px; }
+
+  .ctl { margin-bottom:14px; }
+  .ctl > label { display:block; font-size:12.5px; margin-bottom:4px; font-weight:500; }
+  .sub { font-size:11px; color:var(--muted); margin-top:5px; line-height:1.45; }
+  .ends { display:flex; justify-content:space-between; font-size:10.5px; color:var(--dim); }
+  select, button { width:100%; font-size:13px; padding:9px; cursor:pointer; }
+  button:disabled { cursor:not-allowed; }
+  input[type=range] { width:100%; }
+  input[type=text], input[type=password], textarea {
+    width:100%; font:inherit; font-size:13px; color:var(--ink,#0b0b0b);
+    background:transparent; border:0; border-bottom:1px solid var(--ink,#0b0b0b);
+    border-radius:0; padding:7px 0; outline:none; }
+  textarea { border:1px solid var(--border); padding:8px; resize:vertical; }
+  textarea.code { font-family:ui-monospace, Menlo, monospace; font-size:11px; line-height:1.5; }
+  input:focus-visible, textarea:focus-visible { outline:2px solid var(--ink,#0b0b0b); outline-offset:2px; }
+  .gap { margin-top:8px; }
+
+  .prompts { margin-top:12px; display:grid; gap:10px; }
+  .prompt { border:1px solid var(--border); padding:10px; }
+  .prompt .top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .prompt .name { font-family:var(--serif); font-size:16px; }
+  .prompt button { width:auto; margin-left:auto; padding:4px 10px; font-size:11.5px; }
+  .prompt p { margin:0; font-size:11px; color:var(--muted); line-height:1.5;
+    max-height:4.5em; overflow:hidden; }
+
+  .views { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .view { position:relative; padding:10px; min-height:104px; display:flex;
+    flex-direction:column; cursor:pointer; }
+  .view .picker { position:absolute; inset:0; opacity:0; cursor:pointer; z-index:2; }
+  .view .hint { font-size:10px; color:var(--dim); line-height:1.4; margin-top:2px; }
+  .view .cta { margin-top:auto; padding-top:8px; font-size:11px; font-weight:600; }
+  .view .strip { display:flex; gap:4px; margin-top:8px; }
+  .view .strip figure { flex:1; margin:0; }
+  .view .strip canvas { width:100%; display:block; border:1px solid var(--border); background:#000; }
+  .view .strip figcaption { font-size:8.5px; color:var(--dim); text-align:center; margin-top:3px; }
+
+  details.box { border-top:1px solid var(--border); padding-top:12px; margin-top:14px; }
+  details.box summary { cursor:pointer; font-size:12.5px; color:var(--muted); font-weight:500;
+    list-style:none; }
+  details.box summary::-webkit-details-marker { display:none; }
+  details.box summary::before { content:'▸ '; }
+  details.box[open] summary::before { content:'▾ '; }
+  details.box .inner { padding-top:10px; }
+
+  .stage { position:relative; }
+  #canvas { width:100%; height:100%; display:block; }
+  .pane-label { position:absolute; top:18px; left:18px; padding:10px 13px;
+    max-width:340px; pointer-events:none; }
+  .pane-label .t { margin-bottom:2px; }
+  .pane-label .d { font-size:11.5px; line-height:1.55; }
+  .empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; text-align:center; padding:40px; pointer-events:none; }
+  .empty p { max-width:420px; line-height:1.7; font-size:13px; }
+  .toolbar { position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
+    display:flex; gap:7px; }
+  .toolbar button { width:auto; padding:8px 14px; font-size:12px; }
+  .console { position:absolute; bottom:18px; right:18px; width:330px; }
+  .console summary { padding:9px 13px; font-size:11.5px; cursor:pointer; list-style:none; }
+  .console summary::-webkit-details-marker { display:none; }
+  #log { padding:10px 13px; font-family:ui-monospace, monospace; font-size:10.5px;
+    max-height:200px; overflow-y:auto; white-space:pre-wrap; line-height:1.7; }
+
+  @media (max-width:760px), (max-height:480px) {
+    html, body { height:auto; overflow:auto; }
+    .app { grid-template-columns:1fr; height:auto; }
+    .panel { overflow:visible; }
+    .stage { height:72vh; min-height:420px; }
+  }
+</style>
+<link rel="stylesheet" href="./studio.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div class="app">
+
+<aside class="panel">
+  <div class="brand">Photo to 3D</div>
+  <div class="tagline">Add six photos of the object, build the model, then map every point to its coordinate.</div>
+
+  <section class="step active" id="step1">
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">Add the photos</div>
+      <div class="step-count" id="photoCount">0 of 6</div></div>
+    <div class="step-body">
+      <div class="ctl" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="includeExtras" style="width:auto;" />
+        <label for="includeExtras" style="margin:0;">Include 4 diagonal views</label>
+      </div>
+      <div class="views gap" id="views"></div>
+      <div id="extraViewsHeader" style="display:none; font-size:12px; font-weight:600; margin:16px 0 8px;">Optional (better results)</div>
+      <div class="views" id="extraViews" style="display:none;"></div>
+      <details class="box"><summary>Cut-out sensitivity</summary><div class="inner">
+        <input id="thr" type="range" min="0.05" max="0.95" value="0.5" step="0.01" />
+        <div class="ends"><span>Grab less</span><span>Grab more</span></div>
+      </div></details>
+    </div>
+  </section>
+
+  <section class="step" id="step2">
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">Build the model</div></div>
+    <div class="step-body">
+      <div class="ctl"><label for="res">Detail</label>
+        <select id="res">
+          <option value="64">Quick</option>
+          <option value="112" selected>Normal</option>
+          <option value="160">Fine</option>
+        </select></div>
+      <div class="ctl"><label for="smooth">Smoothness</label>
+        <input id="smooth" type="range" min="0" max="4" value="1" step="1" />
+        <div class="ends"><span>Crisp</span><span>Soft</span></div></div>
+      <button id="build" class="big" disabled>Build model</button>
+      <button id="exportBtn" class="gap" disabled>Download 3D file (.obj)</button>
+    </div>
+  </section>
+
+  <section class="step" id="step3">
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">Map to coordinates</div></div>
+    <div class="step-body">
+      <div class="sub" style="margin-bottom:10px;">Every point on the built surface, mapped to its own (x, y, z) — the first mathematical representation of the object.</div>
+      <button id="mathRoom" class="big violet" disabled>Open the Maths Room</button>
+    </div>
+  </section>
+
+  <section class="step" id="stepAI">
+    <div class="step-head"><div class="step-num">∥</div><div class="step-title">The AI's own model</div></div>
+    <div class="step-body">
+      <div class="sub" style="margin-bottom:10px;">Runs independently of the maths above — this doesn't wait on the build. Copy the prompt into a frontier model (ChatGPT, Claude, Gemini) along with your six photos, then paste its reply back in.</div>
+      <button id="copyAIPrompt">Copy prompt for a frontier AI</button>
+      <div class="ctl gap"><label for="aiPaste">Paste the AI's shape recipe (JSON)</label>
+        <textarea id="aiPaste" class="code" rows="7" spellcheck="false"
+          placeholder='{"object_name": "...", "parts": [{"shape":"ellipsoid", "center":[0,0,0], "size":[0.3,0.2,0.4]}, ...]}'></textarea>
+        <div class="sub">A small parts list, not raw coordinates — the point cloud is generated locally from it, with no extra AI tokens.</div></div>
+      <button id="loadAIResult" class="gap">Generate point cloud</button>
+      <button id="compareAI" class="gap" disabled>Compare with the built model</button>
+      <div class="prompts" id="aiResultBox"></div>
+    </div>
+  </section>
+</aside>
+
+<main class="stage">
+  <canvas id="canvas"></canvas>
+  <div class="pane-label"><div class="t" id="statT">No model yet</div>
+    <div class="d" id="statD">Start with step 1.</div></div>
+  <div class="empty" id="empty">
+    <h2>Your model will appear here</h2>
+    <p>Add the six photos, then build the model.</p>
+  </div>
+  <div class="toolbar">
+    <button id="reset">Recentre</button>
+    <button id="rot">Stop spinning</button>
+    <button id="wire">Show wireframe</button>
+  </div>
+  <details class="console"><summary>Technical details</summary><div id="log"></div></details>
+</main>
+
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { extractSilhouette } from './silhouette.js';
+import { makeDropTile, makeBulkDrop } from './dropslot.js';
+import { SLOT_DEFS, breathe, loadImage, imageToImageData,
+         bboxOf, signedDistance, computeAlignment,
+         thumbOfImage, thumbOfMask, exportOBJ } from './geom.js';
+import { buildField } from './field.js';
+import { openMathRoom } from './mathroom.js';
+import { buildFrontierPrompt, parseAIRecipe } from './aiPipeline.js';
+import { recipeToPointCloud, meshToPointCloud, chamferCompare } from './pointcloud.js';
+
+const $ = (id) => document.getElementById(id);
+const el = Object.fromEntries(['views','extraViews','extraViewsHeader','photoCount',
+  'thr','res','smooth','build','exportBtn','mathRoom',
+  'copyAIPrompt','aiPaste','loadAIResult','compareAI','aiResultBox',
+  'canvas','statT','statD','empty','log','includeExtras'].map((k) => [k, $(k)]));
+
+const log = (m) => { el.log.textContent += `[${new Date().toLocaleTimeString()}] ${m}\n`;
+                     el.log.scrollTop = el.log.scrollHeight; };
+const setStatus = (t, d) => { el.statT.textContent = t; el.statD.innerHTML = d || ''; };
+
+// Browser storage can throw (private mode, blocked site data); never let it break the page.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+async function copyText(text, btn) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+  const old = btn.textContent;
+  btn.textContent = 'Copied';
+  setTimeout(() => { btn.textContent = old; }, 1200);
+}
+
+const slots = SLOT_DEFS.map((d) => ({ ...d, imageData:null, sil:null, bbox:null, sdf:null, xform:null }));
+let mesh = null;
+let wireframe = false;
+let working = false;
+
+el.includeExtras.onchange = () => buildSlotUI();
+
+function fig(canvas, caption) {
+  const f = document.createElement('figure');
+  const c = document.createElement('figcaption');
+  c.textContent = caption;
+  f.append(canvas, c);
+  return f;
+}
+
+/* ---- Step 1: photos -------------------------------------------------------- */
+function computeSilhouette(s) {
+  const m = extractSilhouette(s.imageData, { sensitivity: +el.thr.value });
+  s.sil = { mask: m.mask, w: m.w, h: m.h };
+  s.bbox = bboxOf(m.mask, m.w, m.h);
+  s.sdf = signedDistance(m.mask, m.w, m.h);
+}
+
+let slotEls = [];
+function buildSlotUI() {
+  el.views.innerHTML = '';
+  el.extraViews.innerHTML = '';
+  const incExtras = el.includeExtras.checked;
+  el.extraViewsHeader.style.display = incExtras ? 'block' : 'none';
+  el.extraViews.style.display = incExtras ? 'grid' : 'none';
+  slotEls = [];
+  
+  slots.forEach((s, i) => {
+    if (s.optional && !incExtras && !s.imageData) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'view' + (s.imageData ? ' filled' : '');
+    wrap.innerHTML = `<div class="name">${s.label}</div><div class="hint">${s.hint}</div>`;
+    makeDropTile(wrap, (f) => acceptFile(i, f));
+    const cta = document.createElement('div');
+    cta.className = 'cta';
+    cta.textContent = s.imageData ? 'Click or drop to replace' : '+ Click or drop a photo';
+    wrap.appendChild(cta);
+    if (s.imageData) {
+      const strip = document.createElement('div');
+      strip.className = 'strip';
+      strip.appendChild(fig(thumbOfImage(s.imageData, 120), 'photo'));
+      if (s.sil) strip.appendChild(fig(thumbOfMask(s.sil, 120), 'outline'));
+      wrap.appendChild(strip);
+    }
+    if (s.optional) el.extraViews.appendChild(wrap);
+    else el.views.appendChild(wrap);
+    slotEls[i] = wrap;
+  });
+  updateUI();
+}
+
+async function acceptFile(i, file) {
+  const s = slots[i];
+  const img = await loadImage(URL.createObjectURL(file));
+  s.imageData = imageToImageData(img);
+  computeSilhouette(s);
+  buildSlotUI();
+  log(`${s.label}: ${img.naturalWidth}x${img.naturalHeight}`);
+}
+
+makeBulkDrop(el.views,
+  () => slotEls.map((el, i) => ({ el, filled: !!slots[i].imageData, index: i })).filter(x => x.el && !slots[x.index].optional),
+  (i, f) => acceptFile(i, f));
+makeBulkDrop(el.extraViews,
+  () => slotEls.map((el, i) => ({ el, filled: !!slots[i].imageData, index: i })).filter(x => x.el && slots[x.index].optional),
+  (i, f) => acceptFile(i, f));
+
+let thrTimer = null;
+el.thr.oninput = () => {
+  clearTimeout(thrTimer);
+  thrTimer = setTimeout(() => {
+    for (const s of slots) if (s.imageData) computeSilhouette(s);
+    buildSlotUI();
+  }, 200);
+};
+
+const photosReady = () => slots.filter(s => !s.optional).every((s) => s.imageData && s.bbox);
+
+/* ---- UI state ------------------------------------------------------------- */
+function updateUI() {
+  const reqSlots = slots.filter(s => !s.optional);
+  const nReq = reqSlots.filter(s => s.imageData).length;
+  const optSlots = slots.filter(s => s.optional);
+  const nOpt = optSlots.filter(s => s.imageData).length;
+  const ready = photosReady();
+  el.photoCount.textContent = `${nReq} of 6` + (nOpt ? ` (+${nOpt} optional)` : '');
+
+  el.build.disabled = working || !ready;
+  el.build.textContent = ready ? 'Build model' : `Add ${6-nReq} more photo${6-nReq === 1 ? '' : 's'}`;
+  el.exportBtn.disabled = working || !mesh;
+  el.mathRoom.disabled = working || !mesh;
+  el.compareAI.disabled = working || !mesh || !aiPoints;
+
+  $('step1').className = 'step ' + (ready ? 'done' : nReq ? 'active' : 'active');
+  $('step2').className = 'step ' + (mesh ? 'done' : ready ? 'active' : '');
+  $('step3').className = 'step ' + (mesh ? 'active' : '');
+}
+
+async function busy(btn, fn) {
+  const label = btn.textContent;
+  working = true; updateUI();
+  try { await fn(); }
+  catch (err) { log(`ERROR: ${err.message}`); setStatus('Something went wrong', err.message); console.error(err); }
+  finally { working = false; btn.textContent = label; updateUI(); }
+}
+
+el.mathRoom.onclick = () => { openMathRoom(mesh); };
+
+/* ---- Three.js ------------------------------------------------------------- */
+const renderer = new THREE.WebGLRenderer({ canvas: el.canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf1f0ec);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(2.2, 3.2, 2.0); scene.add(key);
+const fillL = new THREE.DirectionalLight(0xdfe8ff, 0.5); fillL.position.set(-2.4, 0.8, -1.5); scene.add(fillL);
+const rim = new THREE.DirectionalLight(0xffffff, 0.65); rim.position.set(-0.5, -1.6, -2.2); scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xcfcbc2, 0.35));
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 100);
+camera.position.set(1.15, 0.85, 1.5);
+const controls = new OrbitControls(camera, el.canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.06;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.9;
+
+const makeMaterial = () => new THREE.MeshPhysicalMaterial({ color: 0xdedbd4, roughness: 0.38,
+  metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.3, envMapIntensity: 0.9, wireframe });
+
+(function animate() {
+  const w = el.canvas.clientWidth, h = el.canvas.clientHeight;
+  if (w && h && (el.canvas.width !== Math.floor(w*renderer.getPixelRatio()) ||
+                 el.canvas.height !== Math.floor(h*renderer.getPixelRatio()))) {
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+})();
+
+$('reset').onclick = () => { camera.position.set(1.15, 0.85, 1.5); controls.target.set(0, 0, 0); controls.update(); };
+$('rot').onclick = (e) => {
+  controls.autoRotate = !controls.autoRotate;
+  e.target.textContent = controls.autoRotate ? 'Stop spinning' : 'Start spinning';
+};
+$('wire').onclick = (e) => {
+  wireframe = !wireframe;
+  e.target.textContent = wireframe ? 'Show solid' : 'Show wireframe';
+  if (mesh) { mesh.material.dispose(); mesh.material = makeMaterial(); }
+};
+
+/* ---- Build: sample the chosen field, then extract a smooth surface -------
+   Every field is "distance to the surface, positive inside", in cube units,
+   so the AI shape and the photo outlines can be combined with a plain min. */
+function extract(field, N) {
+  if (mesh) { scene.remove(mesh); mesh.material.dispose(); mesh.geometry.dispose(); mesh = null; }
+  // MarchingCubes stops silently when its buffer fills, so size it generously.
+  const maxPoly = Math.min(2000000, Math.max(150000, Math.round(N*N*14)));
+  const mc = new MarchingCubes(N, makeMaterial(), true, false, maxPoly);
+  // MarchingCubes counts values below the level as inside; our field is positive inside.
+  for (let i = 0; i < field.length; i++) mc.field[i] = -field[i];
+  mc.isolation = 0;
+  mc.update();
+  if (mc.count >= mc.maxCount - 3) log(`WARNING: triangle limit reached at ${N}³ — lower the detail.`);
+  mc.scale.setScalar(0.5);
+  mc.frustumCulled = false;
+  scene.add(mc);
+  mesh = mc;
+  return Math.floor((mc.count || 0) / 3);
+}
+
+async function runBuild() {
+  if (!photosReady()) throw new Error('All six photos need a clear cut-out first.');
+  const N = +el.res.value;
+  const t0 = performance.now();
+  el.build.textContent = 'Building… 0%';
+  const field = await buildField(slots, null, 'photos', N, +el.smooth.value, (p) => {
+    el.build.textContent = `Building… ${Math.round(p*100)}%`;
+    setStatus('Building the model', `${Math.round(p*100)}%`);
+  });
+  await breathe();
+  const tris = extract(field, N);
+  el.empty.style.display = tris ? 'none' : 'flex';
+  log(`Built ${N}³ in ${((performance.now()-t0)/1000).toFixed(1)}s — ${tris.toLocaleString()} triangles`);
+  setStatus('From photos', tris ? `<b>${tris.toLocaleString()}</b> surfaces`
+                                 : 'Nothing came out — check the cut-outs.');
+  updateUI();
+}
+
+el.build.onclick = () => busy(el.build, runBuild);
+el.exportBtn.onclick = () => {
+  if (!mesh) return;
+  exportOBJ(mesh, 'model.obj');
+  log('Exported .obj');
+};
+
+/* ---- Parallel lane: the AI's own model ------------------------------------
+   Independent of the build above — no gating on photos or mesh, since this
+   runs on a frontier model outside this page entirely. Copy the prompt, run
+   it elsewhere with the six photos attached, paste back a SMALL parts recipe
+   (not raw coordinates — see aiPipeline.js for why). The dense point cloud is
+   then generated right here, locally, by evaluating the recipe's own
+   signed-distance field with marching cubes: zero further AI tokens spent,
+   however many points you want. */
+el.copyAIPrompt.onclick = () => copyText(buildFrontierPrompt(), el.copyAIPrompt);
+
+let aiRecipe = null, aiPoints = null;
+function renderAIResultBox() {
+  if (!aiPoints) { el.aiResultBox.innerHTML = ''; return; }
+  const xs = aiPoints.map((p) => p.x), ys = aiPoints.map((p) => p.y), zs = aiPoints.map((p) => p.z);
+  const rng = (a) => `${Math.min(...a).toFixed(2)} to ${Math.max(...a).toFixed(2)}`;
+  el.aiResultBox.innerHTML = `
+    <div class="prompt">
+      <div class="top"><span class="name">${aiRecipe.object_name}</span>
+        <button id="downloadAIRecipe">Recipe .json</button>
+        <button id="downloadAICloud">Cloud .json</button></div>
+      <p>${aiRecipe.parts.length} parts → ${aiPoints.length.toLocaleString()} points (generated locally) · x ${rng(xs)} · y ${rng(ys)} · z ${rng(zs)}</p>
+    </div>`;
+  const download = (data, name) => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+  document.getElementById('downloadAIRecipe').onclick = () => download(aiRecipe, 'ai-recipe.json');
+  document.getElementById('downloadAICloud').onclick = () => download(aiPoints, 'ai-point-cloud.json');
+}
+
+el.loadAIResult.onclick = () => {
+  try {
+    aiRecipe = parseAIRecipe(el.aiPaste.value);
+    aiPoints = recipeToPointCloud(aiRecipe, 64);
+    store.set('v1.aiRecipe', JSON.stringify(aiRecipe));
+    renderAIResultBox();
+    updateUI();
+    log(`AI recipe loaded: "${aiRecipe.object_name}", ${aiRecipe.parts.length} parts → expanded to ${aiPoints.length.toLocaleString()} points locally`);
+  } catch (err) {
+    log(`AI result error: ${err.message}`);
+  }
+};
+
+el.compareAI.onclick = () => {
+  if (!mesh || !aiPoints) return;
+  const builtPoints = meshToPointCloud(mesh);
+  const { meanDistance, similarity } = chamferCompare(aiPoints, builtPoints);
+  log(`Compared against built model: mean distance ${meanDistance.toFixed(4)} · similarity ${Math.round(similarity*100)}%`);
+  setStatus('Comparison', `AI recipe vs. built model — mean distance <b>${meanDistance.toFixed(4)}</b>, similarity <b>${Math.round(similarity*100)}%</b>`);
+};
+
+const savedAIRecipe = store.get('v1.aiRecipe');
+if (savedAIRecipe) {
+  try { aiRecipe = JSON.parse(savedAIRecipe); aiPoints = recipeToPointCloud(aiRecipe, 64); renderAIResultBox(); updateUI(); } catch {}
+}
+
+buildSlotUI();
+log('Ready.');
+</script>
+</body>
+</html>
